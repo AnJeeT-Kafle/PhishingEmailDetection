@@ -8,6 +8,7 @@ import {
   paymentRule,
   senderRule,
 } from "./rules/content.js";
+import { analyzeLinks } from "./rules/links.js";
 
 // Each category adds its points once, no matter how many findings it has.
 export const CATEGORIES = {
@@ -63,5 +64,6 @@ const RULES = [urgencyRule, threatRule, credentialRule, paymentRule, senderRule]
 
 export function analyzeEmail(input) {
   const findings = RULES.flatMap((rule) => rule(input));
-  return { ...scoreFindings(findings), findings };
+  // links are parsed for display only; URL findings and scoring come in a later step.
+  return { ...scoreFindings(findings), findings, links: analyzeLinks(input) };
 }
