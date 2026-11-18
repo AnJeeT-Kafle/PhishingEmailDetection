@@ -1,6 +1,11 @@
 // Content rules: look for phishing phrases in the subject and body.
 // DOM-free so Node can test it. Each rule takes { sender, subject, body }
 // and returns findings [{ category, rule, message }], one per matched phrase.
+//
+// The keyword rules are a block list (zyBook 8.7): they flag known-bad phrases.
+// A block list is easy to explain and edit, but phishing that avoids every listed
+// phrase is not flagged (false negative), and harmless text that happens to use a
+// listed phrase is flagged (false positive).
 
 export const URGENCY_PHRASES = [
   "act now",
@@ -56,7 +61,8 @@ function phraseRegex(phrase) {
 const LOCATIONS = ["subject", "body"];
 
 // Returns one finding per phrase that appears in the subject and/or body.
-function matchPhrases(input, phrases, category, rule, description) {
+// note (optional) is appended to each message to explain why the phrase matters.
+function matchPhrases(input, phrases, category, rule, description, note = "") {
   const fields = {
     subject: asText(input?.subject),
     body: asText(input?.body),
@@ -80,7 +86,9 @@ function matchPhrases(input, phrases, category, rule, description) {
       findings.push({
         category,
         rule,
-        message: `${description}: "${matchedText}" found in the ${foundIn.join(" and ")}.`,
+        message:
+          `${description}: "${matchedText}" found in the ${foundIn.join(" and ")}.` +
+          (note ? ` ${note}` : ""),
       });
     }
   }
@@ -106,12 +114,15 @@ export function credentialRule(input) {
   );
 }
 
+// Payment requests map to business email compromise (BEC): an attacker impersonates
+// a trusted person or company to get a fraudulent payment (fake invoice, wire request).
 export function paymentRule(input) {
   return matchPhrases(
     input,
     PAYMENT_PHRASES,
     "payment_request",
     "payment_request",
-    "Unusual payment request"
+    "Unusual payment request",
+    "This may be business email compromise (BEC). Verify the request through a separate, trusted channel before paying."
   );
 }

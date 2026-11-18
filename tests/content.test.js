@@ -37,6 +37,7 @@ test("paymentRule fires and quotes the phrase", () => {
   assert.equal(findings[0].category, "payment_request");
   assert.equal(findings[0].rule, "payment_request");
   assert.match(findings[0].message, /"gift card"/);
+  assert.match(findings[0].message, /business email compromise \(BEC\)/);
 });
 
 test("one finding per matched phrase, and both locations are reported", () => {
