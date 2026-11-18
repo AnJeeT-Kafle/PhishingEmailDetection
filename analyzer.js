@@ -1,6 +1,8 @@
 // Phishing email analyzer: scoring core.
 // This file must stay DOM-free (no document/window) so it can be tested in Node.
 
+import { urgencyRule, threatRule, credentialRule, paymentRule } from "./rules/content.js";
+
 // Each category adds its points once, no matter how many findings it has.
 export const CATEGORIES = {
   urgency_threat: { label: "Urgent or threatening language", points: 15 },
@@ -50,8 +52,8 @@ export function scoreFindings(findings) {
 }
 
 // Rule functions take the input and return findings [{ category, message }].
-// Rules get added in later steps (content, URL, attachment checks).
-const RULES = [];
+// URL and attachment rules get added in later steps.
+const RULES = [urgencyRule, threatRule, credentialRule, paymentRule];
 
 export function analyzeEmail(input) {
   const findings = RULES.flatMap((rule) => rule(input));
