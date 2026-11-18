@@ -7,6 +7,12 @@ const asText = (value) => (typeof value === "string" ? value : "");
 
 const IPV4_REGEX = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
+// Allow list (zyBook 8.7) for hostnames: letters, digits, and hyphens in dot-separated
+// labels. The URL constructor alone is too permissive: it accepts hostnames like
+// "a(b).com", "a_b.com", or "a!b.com". Internationalized names are already converted
+// to punycode (xn--...) by the URL constructor, so they pass.
+const HOSTNAME_REGEX = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?$/;
+
 // Minimal entity decoding for href values and link text in pasted HTML.
 function decodeEntities(text) {
   return text
@@ -47,6 +53,12 @@ export function parseLink(href) {
   const hostname = url.hostname.toLowerCase();
   const isIpv6 = hostname.startsWith("[") && hostname.endsWith("]");
   const isIp = isIpv6 || IPV4_REGEX.test(hostname);
+
+  // Web links need a hostname. Non-web schemes such as mailto: or javascript: have none
+  // and are kept so later checks can flag them. Any hostname that is present must be a
+  // valid IP or pass the allow list.
+  if (!hostname && (scheme === "http" || scheme === "https")) return null;
+  if (hostname && !isIp && !HOSTNAME_REGEX.test(hostname)) return null;
 
   // Naive: last two labels (mail.example.co.uk -> co.uk). IP hosts use the full host.
   const labels = hostname.split(".").filter(Boolean);

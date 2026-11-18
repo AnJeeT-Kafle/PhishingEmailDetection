@@ -124,3 +124,39 @@ test("analyzeEmail returns links without changing scores", () => {
   assert.equal(empty.score, 0);
   assert.deepEqual(empty.links, []);
 });
+
+test("markdown-style link in the URL field is invalid", () => {
+  const links = analyzeEmail({ url: "[www.example.org](https://www.example.org)" }).links;
+  assert.equal(links.length, 1);
+  assert.equal(links[0].invalid, true);
+  assert.equal(links[0].hostname, undefined);
+});
+
+test("markdown-style link in the body never yields a hostname with brackets", () => {
+  const links = analyzeLinks({ body: "Open [www.example.org](https://www.example.org) or [text](https://x.com)." });
+  for (const link of links) {
+    if (!link.invalid) assert.match(link.hostname, /^[a-z0-9.-]+$/, link.hostname);
+  }
+});
+
+test("hostnames with characters outside the allow list are invalid", () => {
+  // The URL constructor accepts all of these; parseLink must not.
+  for (const href of [
+    "http://exa(mple.com",
+    "http://a(b).com",
+    "http://a_b.com",
+    "http://a!b.com",
+    "http://a,b.com",
+    "http://a{b.com",
+  ]) {
+    assert.equal(parseLink(href), null, href);
+  }
+});
+
+test("valid hostnames still parse", () => {
+  assert.equal(parseLink("https://my-bank.example.com/").hostname, "my-bank.example.com");
+  assert.equal(parseLink("http://bücher.example/").hostname, "xn--bcher-kva.example");
+  assert.equal(parseLink("http://192.0.2.15/").isIp, true);
+  assert.equal(parseLink("http://[2001:db8::1]/").isIp, true);
+  assert.equal(parseLink("mailto:help@examplebank.com").scheme, "mailto");
+});
