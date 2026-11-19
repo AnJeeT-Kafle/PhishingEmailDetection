@@ -3,6 +3,8 @@
 // constructor: this module never fetches, visits, or follows any link (no network calls).
 // Pasted HTML is read with regular expressions and is never rendered or executed.
 
+import { KNOWN_ORGS, belongsTo, registrableDomain, mainLabel } from "./content.js";
+
 const asText = (value) => (typeof value === "string" ? value : "");
 
 const IPV4_REGEX = /^\d{1,3}(?:\.\d{1,3}){3}$/;
@@ -37,6 +39,11 @@ function safeFromCodePoint(code) {
 // Parses a link without visiting it. Returns null if it isn't a valid URL. Never throws.
 // "www.example.com" (no scheme) is treated as http://www.example.com.
 export function parseLink(href) {
+  return parseWithUrl(href)?.parsed ?? null;
+}
+
+// Same as parseLink, but also returns the URL object for the link checks below.
+function parseWithUrl(href) {
   if (typeof href !== "string") return null;
   const raw = href.trim();
   if (!raw) return null;
@@ -64,7 +71,7 @@ export function parseLink(href) {
   const labels = hostname.split(".").filter(Boolean);
   const domain = isIp || labels.length <= 2 ? hostname : labels.slice(-2).join(".");
 
-  return { href: raw, scheme, hostname, domain, isIp };
+  return { parsed: { href: raw, scheme, hostname, domain, isIp }, url };
 }
 
 const TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", "'", '"']);
@@ -126,12 +133,165 @@ export function extractLinks(input) {
   return links;
 }
 
-// Extracts and parses every link. Invalid links are kept with invalid: true so the
-// UI can show them; valid links have invalid: false plus the parsed fields.
+// ---------------------------------------------------------------------------
+// Link checks. Every check reads the link as text; no link is ever visited.
+
+const MAX_URL_LENGTH = 100;
+const MAX_HOSTNAME_LABELS = 4;
+const MIN_PERCENT_ENCODED = 5;
+
+// Words that identify a known organization inside a hostname: each official domain's
+// main label ("paypal", "examplebank") and each name or alias with spaces removed
+// ("bankofamerica", "office365").
+const ORG_TOKENS = KNOWN_ORGS.map((org) => ({
+  org,
+  tokens: new Set([
+    ...org.domains.map(mainLabel),
+    ...[org.name, ...org.aliases].map((n) => n.toLowerCase().replace(/[^a-z0-9]/g, "")),
+  ]),
+}));
+
+// Misleading hostname (zyBook 1.5 typosquatting): the hostname contains an
+// organization's name as a whole label or hyphen-separated part, but the host is not
+// that organization's domain or a subdomain of it. Examples: paypal.com.secure-login.xyz,
+// paypal-login.example.
+function misleadingHostname(hostname) {
+  const parts = new Set(hostname.split(/[.-]/));
+  for (const { org, tokens } of ORG_TOKENS) {
+    if (belongsTo(hostname, org.domains)) continue;
+    const token = [...tokens].find((t) => parts.has(t));
+    if (token) return { org, token };
+  }
+  return null;
+}
+
+// File names such as "invoice.pdf" look like domains but are not links.
+const FILE_EXTENSIONS = new Set([
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "jpg", "jpeg",
+  "png", "gif", "html", "htm", "exe", "js",
+]);
+
+// If the visible link text looks like a URL or a bare domain, returns its hostname.
+function hostnameFromText(text) {
+  if (!text || /\s/.test(text)) return null;
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`;
+  const parsed = parseLink(candidate);
+  if (!parsed || !parsed.hostname) return null;
+  if (!parsed.isIp) {
+    const labels = parsed.hostname.split(".");
+    const tld = labels.at(-1);
+    if (labels.length < 2 || !/^[a-z]{2,}$/.test(tld) || FILE_EXTENSIONS.has(tld)) return null;
+  }
+  return parsed.hostname;
+}
+
+const siteOf = (hostname, isIp) => (isIp ? hostname : registrableDomain(hostname));
+
+// Returns { parsed, issues, schemeNote } for one extracted link. Each issue is
+// { category, explanation }; explanations are plain words for the results panel.
+function inspectLink({ href, text }) {
+  const result = parseWithUrl(href);
+  if (!result) {
+    return { parsed: null, issues: [], schemeNote: "Could not be parsed as a valid link." };
+  }
+  const { parsed, url } = result;
+  const { scheme, hostname, isIp } = parsed;
+  const issues = [];
+  const suspicious = (explanation) => issues.push({ category: "suspicious_url", explanation });
+
+  if (scheme === "javascript") {
+    suspicious("Uses the javascript: scheme, which runs code instead of opening a web page.");
+  } else if (scheme === "data") {
+    suspicious("Uses the data: scheme, which embeds content directly instead of opening a web page.");
+  }
+
+  if (isIp) {
+    suspicious(
+      `Points to an IP address (${hostname}) instead of a domain name. Legitimate organizations rarely link to raw IP addresses.`
+    );
+  }
+
+  if (url.username || url.password) {
+    suspicious(
+      `Contains "@" before the host. Browsers ignore everything before "@", so the real destination is ${hostname}.`
+    );
+  }
+
+  if (hostname && !isIp) {
+    const misleading = misleadingHostname(hostname);
+    if (misleading) {
+      suspicious(
+        `Hostname contains "${misleading.token}" but is not on ${misleading.org.name}'s domain ` +
+          `(${misleading.org.domains.join(" or ")}). It actually belongs to ${registrableDomain(hostname)}. ` +
+          `This is a common way to imitate a trusted site.`
+      );
+    }
+
+    if (hostname.split(".").some((label) => label.startsWith("xn--"))) {
+      suspicious(
+        "Hostname uses punycode (xn--), which can hide lookalike characters from other alphabets."
+      );
+    }
+  }
+
+  const complexity = [];
+  if (href.length > MAX_URL_LENGTH) complexity.push(`it is ${href.length} characters long`);
+  const labelCount = hostname.split(".").filter(Boolean).length;
+  if (!isIp && labelCount > MAX_HOSTNAME_LABELS) {
+    complexity.push(`the hostname has ${labelCount} parts`);
+  }
+  const encoded = (href.match(/%[0-9a-f]{2}/gi) || []).length;
+  if (encoded >= MIN_PERCENT_ENCODED) complexity.push(`it has ${encoded} percent-encoded characters`);
+  // The URL constructor drops default ports (80 for http, 443 for https).
+  if (url.port) complexity.push(`it uses a non-standard port (${url.port})`);
+  if (complexity.length > 0) {
+    suspicious(`Is unusually complex: ${complexity.join(", ")}. Complex links can hide the real destination.`);
+  }
+
+  const textHost = hostnameFromText(text);
+  if (textHost && hostname) {
+    const shown = siteOf(textHost, IPV4_REGEX.test(textHost) || textHost.startsWith("["));
+    const actual = siteOf(hostname, isIp);
+    if (shown !== actual) {
+      issues.push({
+        category: "misleading_link",
+        explanation: `The link text shows "${text}" (${shown}), but the link actually goes to ${actual}.`,
+      });
+    }
+  }
+
+  let schemeNote;
+  if (scheme === "https") {
+    schemeNote = "Uses HTTPS: the connection is encrypted, but HTTPS does not prove the site is trustworthy.";
+  } else if (scheme === "http") {
+    schemeNote = "Uses HTTP: the connection is not encrypted.";
+  } else {
+    schemeNote = `Uses the ${scheme}: scheme, which is not a normal web link.`;
+  }
+
+  return { parsed, issues, schemeNote };
+}
+
+// Extracts, parses, and explains every link. Invalid links are kept with invalid: true
+// so the UI can show them; valid links have invalid: false plus the parsed fields.
+// Every link gets an explanations array: one entry per issue, then one scheme note.
 export function analyzeLinks(input) {
-  return extractLinks(input).map(({ href, text, source }) => {
-    const parsed = parseLink(href);
-    if (!parsed) return { href, text, source, invalid: true };
-    return { ...parsed, text, source, invalid: false };
+  return extractLinks(input).map((link) => {
+    const { href, text, source } = link;
+    const { parsed, issues, schemeNote } = inspectLink(link);
+    const explanations = [...issues.map((issue) => issue.explanation), schemeNote];
+    if (!parsed) return { href, text, source, invalid: true, explanations };
+    return { ...parsed, text, source, invalid: false, explanations };
   });
+}
+
+// Findings for scoring: one per issue per link, naming the link. Invalid links give none.
+export function linkRule(input) {
+  return extractLinks(input).flatMap((link) =>
+    inspectLink(link).issues.map(({ category, explanation }) => ({
+      category,
+      rule: category,
+      message: `Link ${link.href}: ${explanation}`,
+    }))
+  );
 }

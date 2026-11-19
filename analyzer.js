@@ -8,7 +8,7 @@ import {
   paymentRule,
   senderRule,
 } from "./rules/content.js";
-import { analyzeLinks } from "./rules/links.js";
+import { analyzeLinks, linkRule } from "./rules/links.js";
 
 // Each category adds its points once, no matter how many findings it has.
 export const CATEGORIES = {
@@ -59,11 +59,11 @@ export function scoreFindings(findings) {
 }
 
 // Rule functions take the input and return findings [{ category, message }].
-// URL and attachment rules get added in later steps.
-const RULES = [urgencyRule, threatRule, credentialRule, paymentRule, senderRule];
+// The attachment rule gets added in a later step.
+const RULES = [urgencyRule, threatRule, credentialRule, paymentRule, senderRule, linkRule];
 
 export function analyzeEmail(input) {
   const findings = RULES.flatMap((rule) => rule(input));
-  // links are parsed for display only; URL findings and scoring come in a later step.
+  // links holds per-link details and explanations for the results panel.
   return { ...scoreFindings(findings), findings, links: analyzeLinks(input) };
 }

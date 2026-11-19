@@ -192,20 +192,27 @@ export function parseSender(sender) {
 }
 
 // True if domain equals one of the org's domains or is a subdomain of one.
-function belongsTo(domain, orgDomains) {
+export function belongsTo(domain, orgDomains) {
   return orgDomains.some((d) => domain === d || domain.endsWith(`.${d}`));
 }
 
 // Common second-level parts of country domains, e.g. "co" in example.co.uk.
 const SECOND_LEVEL = new Set(["co", "com", "net", "org", "gov", "edu", "ac"]);
 
-// The registrable name of a domain: "paypal" for "mail.paypal.com" or "paypal.co.uk".
-function mainLabel(domain) {
-  const labels = domain.split(".");
+// The registrable domain: "paypal.com" for "mail.paypal.com", "paypal.co.uk" for
+// "www.paypal.co.uk". Uses a small list of country second-level parts, not the full
+// public suffix list.
+export function registrableDomain(domain) {
+  const labels = domain.split(".").filter(Boolean);
   if (labels.length >= 3 && SECOND_LEVEL.has(labels[labels.length - 2])) {
-    return labels[labels.length - 3];
+    return labels.slice(-3).join(".");
   }
-  return labels.length >= 2 ? labels[labels.length - 2] : labels[0];
+  return labels.slice(-2).join(".");
+}
+
+// The registrable name of a domain: "paypal" for "mail.paypal.com" or "paypal.co.uk".
+export function mainLabel(domain) {
+  return registrableDomain(domain).split(".")[0];
 }
 
 // Levenshtein distance, with an early exit once it exceeds max.

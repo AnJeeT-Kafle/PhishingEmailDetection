@@ -17,6 +17,9 @@ test("plain-text https link is extracted and parsed", () => {
     text: null,
     source: "body",
     invalid: false,
+    explanations: [
+      "Uses HTTPS: the connection is encrypted, but HTTPS does not prove the site is trustworthy.",
+    ],
   });
 });
 
@@ -96,8 +99,9 @@ test("identical href + text is deduplicated", () => {
 test("invalid href is flagged, no crash", () => {
   const links = analyzeLinks({ body: '<a href="http://exa mple.com">Click</a>', url: "not a url" });
   assert.equal(links.length, 2);
-  assert.deepEqual(links[0], { href: "http://exa mple.com", text: "Click", source: "html", invalid: true });
-  assert.deepEqual(links[1], { href: "not a url", text: null, source: "url_field", invalid: true });
+  const invalidNote = ["Could not be parsed as a valid link."];
+  assert.deepEqual(links[0], { href: "http://exa mple.com", text: "Click", source: "html", invalid: true, explanations: invalidNote });
+  assert.deepEqual(links[1], { href: "not a url", text: null, source: "url_field", invalid: true, explanations: invalidNote });
   assert.equal(parseLink(""), null);
   assert.equal(parseLink(undefined), null);
 });
@@ -108,15 +112,19 @@ test("missing body -> []", () => {
   assert.deepEqual(analyzeLinks({ body: null, url: 42 }), []);
 });
 
-test("analyzeEmail returns links without changing scores", () => {
+test("analyzeEmail returns links, and an IP link adds suspicious_url", () => {
   const result = analyzeEmail({
     sender: "it-support@northfield-university.example",
     subject: "Urgent: password verification required",
     body: "Reply with your current password at http://192.0.2.15/verify within 24 hours.",
   });
-  assert.equal(result.score, 35);
+  // urgency 15 + credential request 20 + IP-address link 15
+  assert.equal(result.score, 50);
   assert.equal(result.classification, "Medium");
-  assert.deepEqual(result.breakdown.map((item) => item.category), ["urgency_threat", "sensitive_info"]);
+  assert.deepEqual(
+    result.breakdown.map((item) => item.category),
+    ["urgency_threat", "sensitive_info", "suspicious_url"]
+  );
   assert.equal(result.links.length, 1);
   assert.equal(result.links[0].isIp, true);
 
