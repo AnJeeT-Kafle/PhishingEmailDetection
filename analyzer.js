@@ -9,6 +9,7 @@ import {
   senderRule,
 } from "./rules/content.js";
 import { analyzeLinks, linkRule } from "./rules/links.js";
+import { attachmentRule, inspectAttachments } from "./rules/attachments.js";
 
 // Each category adds its points once, no matter how many findings it has.
 export const CATEGORIES = {
@@ -59,11 +60,64 @@ export function scoreFindings(findings) {
 }
 
 // Rule functions take the input and return findings [{ category, message }].
-// The attachment rule gets added in a later step.
-const RULES = [urgencyRule, threatRule, credentialRule, paymentRule, senderRule, linkRule];
+const RULES = [
+  urgencyRule,
+  threatRule,
+  credentialRule,
+  paymentRule,
+  senderRule,
+  linkRule,
+  attachmentRule,
+];
 
+// A report from inspectAttachments has these fields. Raw files ({ name, size, bytes })
+// don't, and would be skipped by attachmentRule without a warning.
+const isInspectedReport = (item) =>
+  item !== null && typeof item === "object" && "extension" in item && "sha256" in item;
+
+// Warnings for attachments that were not (or could not be) checked. Never silent.
+function attachmentWarnings(attachments) {
+  if (attachments === undefined) return [];
+  if (!Array.isArray(attachments)) {
+    return ["Attachments were ignored: expected a list of reports from inspectAttachments."];
+  }
+  const warnings = [];
+  for (const item of attachments) {
+    const name = (item && typeof item.name === "string" && item.name) || "Unnamed attachment";
+    if (!isInspectedReport(item)) {
+      warnings.push(
+        `${name} was not inspected: pass raw files as input.files to analyzeEmailAsync, ` +
+          "or run inspectAttachments first. It was not scored."
+      );
+    } else if (item.overLimit) {
+      warnings.push(`${name} was not inspected: larger than 5 MB`);
+    }
+  }
+  return warnings;
+}
+
+// Synchronous analysis. input: { sender, subject, body, url, attachments }, where
+// attachments are reports from inspectAttachments (see analyzeEmailAsync).
 export function analyzeEmail(input) {
   const findings = RULES.flatMap((rule) => rule(input));
-  // links holds per-link details and explanations for the results panel.
-  return { ...scoreFindings(findings), findings, links: analyzeLinks(input) };
+  const scored = scoreFindings(findings);
+  const attachments = Array.isArray(input?.attachments) ? input.attachments : [];
+  return {
+    ...scored,
+    warnings: [...scored.warnings, ...attachmentWarnings(input?.attachments)],
+    findings,
+    // Per-link and per-attachment details and explanations for the results panel.
+    links: analyzeLinks(input),
+    attachments,
+  };
+}
+
+// Same as analyzeEmail, but accepts raw files as input.files ([{ name, size, bytes }]).
+// Hashing (SHA-256 via Web Crypto) is asynchronous, so files are inspected here first.
+export async function analyzeEmailAsync(input) {
+  if (Array.isArray(input?.files)) {
+    const reports = await inspectAttachments(input.files);
+    return analyzeEmail({ ...input, attachments: reports });
+  }
+  return analyzeEmail(input);
 }
