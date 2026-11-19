@@ -38,6 +38,15 @@ export const SIGNATURES = [
   },
 ];
 
+// File types that can run code when opened (block list, zyBook 8.7).
+export const DANGEROUS_EXTENSIONS = [
+  "exe", "scr", "bat", "cmd", "com", "pif", "js", "jse", "vbs", "vbe", "wsf",
+  "ps1", "jar", "msi", "hta", "lnk", "iso", "img", "reg", "dll", "cpl",
+];
+
+// Office files that can contain macros.
+export const MACRO_EXTENSIONS = ["docm", "xlsm", "pptm"];
+
 // Extensions people expect to be harmless documents or media. A name like
 // "report.pdf.exe" uses one of these before the real extension to disguise the file.
 const DECOY_EXTENSIONS = new Set([
@@ -103,6 +112,14 @@ export async function inspectAttachment(attachment) {
   if (!name) explanations.push("No file name was provided.");
   else if (!extension) explanations.push("The file name has no extension, so its type can't be checked by name.");
 
+  if (DANGEROUS_EXTENSIONS.includes(extension)) {
+    explanations.push(`.${extension} files can run programs or scripts on your computer. Do not open this file.`);
+  } else if (MACRO_EXTENSIONS.includes(extension)) {
+    explanations.push(
+      `.${extension} is a macro-enabled Office file. Macros can run harmful code; do not enable them.`
+    );
+  }
+
   if (doubleExtension) {
     explanations.push(
       `The name has a double extension (.${allExtensions.slice(-2).join(".")}). Only the last one ` +
@@ -145,7 +162,10 @@ export async function inspectAttachment(attachment) {
     const detected = SIGNATURES.find((s) => s.type === detectedType);
     report.signatureMatch = detected !== undefined && detected.extensions.includes(extension);
     if (report.signatureMatch) {
-      explanations.push(`The file's content signature matches its .${extension} extension (${labelFor(detectedType)}).`);
+      explanations.push(
+        `The file's content signature matches its .${extension} extension (${labelFor(detectedType)}), ` +
+          "but this does not mean the file is safe."
+      );
     } else if (detectedType) {
       explanations.push(
         `The name says .${extension}, but the content looks like a ${labelFor(detectedType)}. ` +
@@ -185,4 +205,44 @@ export async function inspectAttachment(attachment) {
 export async function inspectAttachments(list) {
   if (!Array.isArray(list)) return [];
   return Promise.all(list.map((attachment) => inspectAttachment(attachment)));
+}
+
+// Findings for scoring, from reports made by inspectAttachments. One finding per issue
+// per file, naming the file. Over-limit files were not inspected, so they give no
+// findings (analyzeEmail adds a warning for them instead).
+export function attachmentRule(input) {
+  const reports = Array.isArray(input?.attachments) ? input.attachments : [];
+  const findings = [];
+
+  for (const report of reports) {
+    if (!report || report.overLimit) continue;
+    const name = report.name || "Unnamed attachment";
+    const extension = typeof report.extension === "string" ? report.extension : "";
+    const add = (issue) =>
+      findings.push({
+        category: "dangerous_attachment",
+        rule: "dangerous_attachment",
+        message: `Attachment "${name}": ${issue}`,
+      });
+
+    if (DANGEROUS_EXTENSIONS.includes(extension)) {
+      add(`.${extension} files can run programs or scripts on your computer.`);
+    }
+    if (MACRO_EXTENSIONS.includes(extension)) {
+      add(`.${extension} is a macro-enabled Office file; macros can run harmful code.`);
+    }
+    if (report.doubleExtension) {
+      const [decoy] = (report.allExtensions ?? []).slice(-2);
+      add(`double extension (.${decoy}.${extension}) disguises the real file type (.${extension}).`);
+    }
+    if (report.signatureMatch === false) {
+      add(
+        report.detectedType
+          ? `the content looks like a ${labelFor(report.detectedType)}, but the name says .${extension}.`
+          : `the content does not match the .${extension} extension.`
+      );
+    }
+  }
+
+  return findings;
 }
