@@ -220,7 +220,7 @@ textarea[aria-invalid="true"] {
   background: var(--code-bg);
 }
 
-.file-list .file-note {
+.file-note {
   display: block;
   color: var(--muted);
   font-size: 0.875rem;

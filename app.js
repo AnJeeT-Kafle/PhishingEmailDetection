@@ -9,9 +9,11 @@
 //   Files over the size limit are never read at all.
 // - Nothing is stored (no cookies or web storage) and nothing is logged to the console.
 
+import { analyzeEmailAsync } from "./analyzer.js";
 import { parseSender } from "./rules/content.js";
 import { extractLinks, parseLink } from "./rules/links.js";
-import { MAX_ATTACHMENT_BYTES } from "./rules/attachments.js";
+import { MAX_ATTACHMENT_BYTES, SIGNATURES } from "./rules/attachments.js";
+import { buildRecommendations } from "./recommendations.js";
 
 // Resource limits (also set as maxlength in index.html). This file is the authority.
 const LIMITS = { sender: 320, subject: 500, body: 100000, url: 2048 };
@@ -237,6 +239,229 @@ async function prepareFiles(fileList) {
 }
 
 // ---------------------------------------------------------------------------
+// Results. Every value from the analyzer (which may quote the email) goes through el(),
+// so it is set as text and never parsed as HTML.
+
+const ASSESSMENTS = {
+  Low: "Low risk (0–29). No strong phishing indicators were found. This does not confirm the email is legitimate.",
+  // Low, but some categories were triggered (e.g. a dangerous attachment alone is 15).
+  LowWithFindings:
+    "Low risk (0–29). Some indicators were found (see Findings), but not enough for a higher rating. This does not confirm the email is legitimate.",
+  Medium:
+    "Medium risk (30–59). Some phishing indicators were found. Review the message carefully and verify the sender before acting on it.",
+  High:
+    "High risk (60–100). Avoid interacting with this email and verify it independently through a separate, trusted channel.",
+};
+
+const SOURCE_LABELS = {
+  html: "HTML link in the body",
+  body: "Text in the body",
+  url_field: "Additional URL field",
+};
+
+const typeLabel = (type) => SIGNATURES.find((s) => s.type === type)?.label ?? type;
+
+// A <dl> of [term, value] pairs. Values are text; a value of null is skipped.
+function facts(pairs) {
+  const list = el("dl", { className: "facts" });
+  for (const [term, value, valueClass] of pairs) {
+    if (value === null || value === undefined) continue;
+    list.append(el("dt", { text: term }), el("dd", { className: valueClass, text: value }));
+  }
+  return list;
+}
+
+function bulletList(items, className = "bullets") {
+  const list = el("ul", { className });
+  for (const item of items) list.append(el("li", { text: item }));
+  return list;
+}
+
+function renderSummary(result) {
+  const level = ["Low", "Medium", "High"].includes(result.classification) ? result.classification : "Low";
+  const badge = $("score-badge");
+  badge.className = `badge badge-${level.toLowerCase()}`;
+  $("score-value").textContent = `${result.score}/100`;
+  $("score-class").textContent = `${level} risk`;
+  $("assessment").textContent =
+    level === "Low" && result.breakdown.length > 0 ? ASSESSMENTS.LowWithFindings : ASSESSMENTS[level];
+}
+
+function renderRecommendations(result) {
+  const list = $("recommendations");
+  list.replaceChildren();
+  for (const text of buildRecommendations(result)) list.append(el("li", { text }));
+}
+
+function renderBreakdown(result) {
+  const body = $("breakdown-body");
+  body.replaceChildren();
+  let rawTotal = 0;
+
+  for (const { label, points } of result.breakdown) {
+    rawTotal += points;
+    body.append(el("tr", {}, el("td", { text: label }), el("td", { className: "num", text: `+${points}` })));
+  }
+  if (result.breakdown.length === 0) {
+    body.append(el("tr", {}, el("td", { text: "No categories triggered" }), el("td", { className: "num", text: "0" })));
+  }
+
+  $("breakdown-total").textContent = String(result.score);
+  $("cap-note").textContent =
+    rawTotal > 100
+      ? `The categories add up to ${rawTotal} points; the score is capped at 100.`
+      : "Each category adds its points once, however many findings it has. The score is capped at 100.";
+}
+
+// Findings grouped under their category label, in breakdown order.
+function renderFindings(result) {
+  const container = $("findings");
+  container.replaceChildren();
+  if (result.findings.length === 0) {
+    container.append(el("p", { className: "empty", text: "No phishing indicators were found." }));
+    return;
+  }
+
+  const groups = new Map(result.breakdown.map((item) => [item.category, { label: item.label, messages: [] }]));
+  for (const finding of result.findings) {
+    if (!groups.has(finding.category)) {
+      groups.set(finding.category, { label: "Other (not scored)", messages: [] });
+    }
+    groups.get(finding.category).messages.push(finding.message);
+  }
+
+  for (const { label, messages } of groups.values()) {
+    if (messages.length === 0) continue;
+    container.append(el("div", { className: "finding-group" }, el("h4", { text: label }), bulletList(messages)));
+  }
+}
+
+function renderLinks(result) {
+  const container = $("links");
+  container.replaceChildren();
+  if (result.links.length === 0) {
+    container.append(el("p", { className: "empty", text: "No links were found." }));
+    return;
+  }
+
+  for (const link of result.links) {
+    // Every link ends with one scheme note; anything before it is an issue.
+    // Invalid links have a single "could not be parsed" explanation.
+    const flagged = link.invalid || link.explanations.length > 1;
+    const card = el("article", { className: flagged ? "card flagged" : "card" });
+    card.append(el("p", { className: "card-title mono", text: link.href }));
+    card.append(
+      facts([
+        // hostname, not domain: the analyzer's domain field is a simple last-two-labels guess.
+        ["Hostname", link.invalid ? null : link.hostname || "(none)", "mono"],
+        ["Scheme", link.invalid ? null : link.scheme],
+        ["Shown as", link.text || null, "mono"],
+        ["Found in", SOURCE_LABELS[link.source] ?? link.source],
+        ["Status", link.invalid ? "Not a valid link" : null],
+      ])
+    );
+    card.append(bulletList(link.explanations));
+    container.append(card);
+  }
+}
+
+// The content was not inspected if the file was over the limit (never read) or could
+// not be read (the analyzer then says no content was provided).
+const contentInspected = (report) =>
+  !report.overLimit && !report.explanations.some((e) => e.startsWith("No file content was provided"));
+
+function signatureText(report) {
+  if (!contentInspected(report)) return "Not checked (file content was not inspected)";
+  if (report.signatureMatch === true) return "Matches extension";
+  if (report.signatureMatch === false) return "Does not match extension";
+  return "Not a supported type for signature check";
+}
+
+function renderAttachments(result) {
+  const container = $("attachments");
+  container.replaceChildren();
+  if (result.attachments.length === 0) {
+    container.append(el("p", { className: "empty", text: "No attachments were added." }));
+    return;
+  }
+
+  const flaggedNames = new Set(
+    result.findings
+      .filter((f) => f.category === "dangerous_attachment")
+      .map((f) => f.message.match(/^Attachment "(.*)": /s)?.[1])
+  );
+
+  for (const report of result.attachments) {
+    const name = report.name || "Unnamed attachment";
+    const flagged = flaggedNames.has(name) || report.overLimit;
+    const card = el("article", { className: flagged ? "card flagged" : "card" });
+    card.append(el("p", { className: "card-title mono", text: name }));
+    if (report.overLimit) {
+      card.append(
+        el("p", {
+          className: "error",
+          text: `Not inspected: over ${LIMIT_MB} MB. This file was not read, so the score may be incomplete.`,
+        })
+      );
+    }
+    card.append(
+      facts([
+        ["Size", formatBytes(report.size)],
+        [
+          "Detected type",
+          report.detectedType
+            ? typeLabel(report.detectedType)
+            : contentInspected(report)
+              ? "Not recognized"
+              : "Not checked",
+        ],
+        ["Signature", signatureText(report)],
+        ["SHA-256", report.sha256 ?? "Not calculated", "mono"],
+      ])
+    );
+    card.append(bulletList(report.explanations));
+    container.append(card);
+  }
+}
+
+// Analyzer warnings plus the page's own notes (e.g. a file that could not be read).
+function renderWarnings(result, notes) {
+  const all = [...result.warnings, ...notes];
+  const list = $("warnings");
+  list.replaceChildren();
+  for (const text of all) list.append(el("li", { text }));
+  $("warnings-block").hidden = all.length === 0;
+}
+
+function renderResults(result, notes = []) {
+  // The page's own notes also count as warnings for the recommendations.
+  const withNotes = { ...result, warnings: [...result.warnings, ...notes] };
+  renderSummary(result);
+  renderRecommendations(withNotes);
+  renderBreakdown(result);
+  renderFindings(result);
+  renderLinks(result);
+  renderAttachments(result);
+  renderWarnings(result, notes);
+
+  $("results").hidden = false;
+  // Move keyboard and screen reader focus to the results (and scroll them into view).
+  $("results-heading").focus();
+}
+
+function clearResults() {
+  for (const id of ["recommendations", "breakdown-body", "findings", "links", "attachments", "warnings"]) {
+    $(id).replaceChildren();
+  }
+  for (const id of ["score-value", "score-class", "assessment", "breakdown-total", "cap-note"]) {
+    $(id).textContent = "";
+  }
+  $("score-badge").className = "badge";
+  $("warnings-block").hidden = true;
+  $("results").hidden = true;
+}
+
+// ---------------------------------------------------------------------------
 // Clear and submit
 
 // Incremented on Clear so an analysis that finishes afterwards is discarded.
@@ -250,17 +475,48 @@ function onClear() {
   setStatus("");
   updateDetectedUrls();
   renderFileList();
-  $("results").hidden = true;
+  clearResults();
   $("sender").focus();
 }
 
-function onSubmit(event) {
+async function onAnalyze(event) {
   event.preventDefault();
+  const button = $("analyze-btn");
+  if (button.disabled) return;
+
   const input = readForm();
   const errors = validateInput(input);
   showErrors(errors);
   if (Object.keys(errors).length > 0) return;
-  setStatus("Input is valid.");
+
+  const run = ++generation;
+  button.disabled = true;
+  button.textContent = "Analyzing…";
+  $("results").setAttribute("aria-busy", "true");
+  setStatus("Analyzing…");
+
+  try {
+    const { files, notes } = await prepareFiles(input.fileList);
+    const result = await analyzeEmailAsync({
+      sender: input.sender.trim(),
+      subject: input.subject,
+      body: input.body,
+      url: input.url,
+      files,
+    });
+    if (run !== generation) return; // Cleared while analyzing.
+    renderResults(result, notes);
+    setStatus("Analysis complete. Results are shown below.");
+  } catch {
+    if (run !== generation) return;
+    // Nothing about the email is logged; the user just sees a friendly message.
+    clearResults();
+    setStatus("Something went wrong while analyzing this email. Please check the input and try again.", true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Analyze Email";
+    $("results").removeAttribute("aria-busy");
+  }
 }
 
 // Blocks a paste that would go over a field's limit, instead of letting maxlength cut
@@ -286,7 +542,7 @@ function init() {
   // Start empty, even if the browser tried to restore earlier input.
   form.reset();
 
-  form.addEventListener("submit", onSubmit);
+  form.addEventListener("submit", onAnalyze);
   $("clear-btn").addEventListener("click", onClear);
   $("files").addEventListener("change", renderFileList);
 
