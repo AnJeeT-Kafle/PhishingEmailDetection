@@ -16,6 +16,7 @@
     <title>Phishing Email Detection Platform</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -34,7 +35,7 @@
 
         <!-- novalidate: the HTML5 attributes below describe the rules, but app.js
              (validateInput) is the authority and shows errors inline. -->
-        <form id="email-form" novalidate>
+        <form id="email-form" novalidate autocomplete="off">
           <div class="field">
             <label for="sender">Sender email address <span class="req">(required)</span></label>
             <input
