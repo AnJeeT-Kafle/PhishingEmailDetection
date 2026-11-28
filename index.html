@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Content Security Policy: only scripts and styles from this folder may load.
+      No inline scripts or styles, no network requests (connect-src 'none'), no plugins,
+      and form-action 'none' so the form can never submit email content anywhere.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Phishing Email Detection Platform</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <h1>Phishing Email Detection Platform</h1>
+        <p class="tagline">
+          Paste an email to get an explainable phishing risk score. Analysis runs entirely in your
+          browser: links are never opened and attachments are never run.
+        </p>
+      </div>
+    </header>
+
+    <main class="container layout">
+      <section class="panel" aria-labelledby="input-heading">
+        <h2 id="input-heading">Email to analyze</h2>
+
+        <!-- novalidate: the HTML5 attributes below describe the rules, but app.js
+             (validateInput) is the authority and shows errors inline. -->
+        <form id="email-form" novalidate autocomplete="off">
+          <div class="field">
+            <label for="sender">Sender email address <span class="req">(required)</span></label>
+            <input
+              id="sender"
+              name="sender"
+              type="text"
+              inputmode="email"
+              required
+              maxlength="320"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Example Bank &lt;alerts@examplebank.example&gt;"
+              aria-describedby="sender-hint sender-error"
+            />
+            <p id="sender-hint" class="hint">Either addr@domain or Name &lt;addr@domain&gt;.</p>
+            <p id="sender-error" class="error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="subject">Subject <span class="opt">(optional)</span></label>
+            <input
+              id="subject"
+              name="subject"
+              type="text"
+              maxlength="500"
+              autocomplete="off"
+              aria-describedby="subject-error"
+            />
+            <p id="subject-error" class="error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="body">Message body <span class="req">(required)</span></label>
+            <textarea
+              id="body"
+              name="body"
+              rows="10"
+              required
+              maxlength="100000"
+              spellcheck="false"
+              aria-describedby="body-hint body-error"
+            ></textarea>
+            <p id="body-hint" class="hint">Plain text or pasted HTML. Up to 100,000 characters.</p>
+            <p id="body-error" class="error" hidden></p>
+          </div>
+
+          <div class="field">
+            <h3 class="field-heading" id="detected-heading">Links found in the body</h3>
+            <p id="detected-empty" class="hint">No links found yet.</p>
+            <ul id="detected-urls" class="url-list" aria-labelledby="detected-heading" hidden></ul>
+          </div>
+
+          <div class="field">
+            <label for="manual-url">Additional URL <span class="opt">(optional)</span></label>
+            <input
+              id="manual-url"
+              name="manual-url"
+              type="url"
+              inputmode="url"
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="http://192.0.2.10/login"
+              aria-describedby="manual-url-hint manual-url-error"
+            />
+            <p id="manual-url-hint" class="hint">Checked as text only. It is never visited.</p>
+            <p id="manual-url-error" class="error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="files">Attachments <span class="opt">(optional)</span></label>
+            <input id="files" name="files" type="file" multiple aria-describedby="files-hint files-error" />
+            <p id="files-hint" class="hint">
+              Up to 10 files. Files are read as bytes only and never opened or run. Files over 5 MB
+              are not read.
+            </p>
+            <p id="files-error" class="error" hidden></p>
+            <ul id="file-list" class="file-list" hidden></ul>
+          </div>
+
+          <div class="actions">
+            <button id="analyze-btn" type="submit" class="btn btn-primary">Analyze Email</button>
+            <button id="clear-btn" type="button" class="btn btn-secondary">Clear</button>
+          </div>
+          <p id="form-status" class="form-status" role="status"></p>
+        </form>
+      </section>
+
+      <section id="results" class="panel results" aria-labelledby="results-heading" aria-live="polite" hidden>
+        <h2 id="results-heading" tabindex="-1">Results</h2>
+
+        <div id="summary" class="summary">
+          <div id="score-badge" class="badge">
+            <span id="score-value" class="badge-score"></span>
+            <span id="score-class" class="badge-class"></span>
+          </div>
+          <p id="assessment" class="assessment"></p>
+        </div>
+
+        <h3>Recommendations</h3>
+        <ul id="recommendations" class="bullets"></ul>
+
+        <h3>Score breakdown</h3>
+        <div class="table-wrap">
+          <table class="breakdown">
+            <thead>
+              <tr><th scope="col">Category</th><th scope="col" class="num">Points</th></tr>
+            </thead>
+            <tbody id="breakdown-body"></tbody>
+            <tfoot>
+              <tr><th scope="row">Total</th><td id="breakdown-total" class="num"></td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <p id="cap-note" class="hint"></p>
+
+        <h3>Findings</h3>
+        <div id="findings"></div>
+
+        <h3>Links</h3>
+        <div id="links" class="cards"></div>
+
+        <h3>Attachments</h3>
+        <div id="attachments" class="cards"></div>
+
+        <div id="warnings-block" hidden>
+          <h3>Warnings</h3>
+          <ul id="warnings" class="bullets warnings"></ul>
+        </div>
+
+        <p class="limitations">
+          <strong>Limitations:</strong> This tool analyzes content only. It does not verify SPF,
+          DKIM, or DMARC sender authentication, and a low score does not confirm an email is
+          legitimate.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>Course project. Use fictional emails and harmless sample files only.</p>
+      </div>
+    </footer>
+  </body>
+</html>
