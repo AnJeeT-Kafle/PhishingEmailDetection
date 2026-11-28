@@ -1,33 +1,56 @@
 # Phishing Email Detection Platform
 
-A cybersecurity class project for assessing phishing risk in fictional emails. The planned web app checks sender claims, message content, links, and attachments. It explains which indicators were found and how they contributed to the score.
+A cybersecurity class project that evaluates potential phishing indicators in fictional email samples and explains the risk assessment. Analysis runs locally in the browser using JavaScript.
 
-**Project status:** Planning. The features and test results below describe the intended implementation and expected behavior.
+**Project status:** Implemented and integrated into `main`. The browser interface and detection engine are functional.
+
+## Getting started
+
+Requirements: Node.js 20 or newer and Python 3.
+
+```bash
+git clone https://github.com/AnJeeT-Kafle/PhishingEmailDetection.git
+cd PhishingEmailDetection
+npm test
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Open [http://localhost:8000](http://localhost:8000) in your browser. No npm packages or external API keys are needed.
 
 ## How it works
 
-1. Enter a sender address, subject, and message body. Optionally add a URL or upload a sample attachment.
-2. Select **Analyze Email** to see the risk score, classification, findings, and recommended next steps.
-3. Select **Clear** to reset the form and results.
+1. Enter the sender address, subject, and message body.
+2. Optionally add a URL or select a harmless sample attachment.
+3. Select **Analyze Email** to view the risk score, classification, findings, and recommendations.
+4. Select **Clear** to reset the form and results.
 
-## Planned implementation
-
-The project uses HTML for the form and results, CSS for the responsive layout, and JavaScript for browser-side analysis. The planned entry point is `index.html`, with styles in `style.css` and detection logic in `app.js`. Once those files are in place, serve the project folder locally and open it in your browser.
-
-| Check | What the results will show |
+| Check | What the application evaluates |
 | --- | --- |
-| Sender and message | Urgency, threats, requests for credentials, unusual payment instructions, and mismatches between a claimed organization and the sender domain. |
-| Links | Scheme, hostname, domain, and an explanation for each flagged link. Checks cover IP-address hosts, misleading hostnames, unusual structures, and mismatches between a displayed link address and its destination. Links are extracted from plain text, pasted HTML, and the optional URL field. |
-| Attachments | Filename, extension, size, SHA-256 hash, and a signature comparison for supported formats. Findings explain risks associated with double extensions, unexpected scripts, and executables. The planned upload limit is 5 MB. |
+| Sender and message | Urgency, threats, sensitive information requests, unusual payment requests, and sender identity mismatches. |
+| Links | URLs extracted from text or HTML, scheme, hostname, and structural or displayed-destination concerns. |
+| Attachments | Filename, extension, size, supported file signature, and SHA-256 hash. Files above 5 MB are reported but skipped for inspection. |
+
+## Project structure
+
+| File | Purpose |
+| --- | --- |
+| `index.html`, `style.css` | Form, responsive layout, and results display |
+| `app.js` | Input validation, form handling, and safe results rendering |
+| `analyzer.js` | Coordinates rules and calculates risk |
+| `rules/content.js` | Sender and content analysis |
+| `rules/links.js` | Static link analysis |
+| `rules/attachments.js` | Static file inspection |
+| `recommendations.js` | Risk-specific guidance |
+| `tests/` | Automated regression and UI safety tests |
 
 ## Risk scoring
 
-Each triggered category adds points once per email. The results can list multiple findings within a category. The total is capped at 100.
+Each triggered category adds its points once per email, even if several findings belong to that category. The total is capped at 100.
 
 | Indicator | Points |
 | --- | ---: |
 | Urgency or threats | 15 |
-| Request for sensitive information | 20 |
+| Sensitive information request | 20 |
 | Sender identity mismatch | 20 |
 | Unusual payment request | 15 |
 | Suspicious URL characteristics | 15 |
@@ -36,29 +59,30 @@ Each triggered category adds points once per email. The results can list multipl
 
 | Score | Assessment |
 | --- | --- |
-| 0–29 | Low risk. Review any findings shown. |
-| 30–59 | Medium risk. Review the message and verify the sender. |
-| 60–100 | High risk. Avoid interacting with the message and verify it through a separate, trusted channel. |
+| 0–29 | Low risk |
+| 30–59 | Medium risk |
+| 60–100 | High risk |
 
-The score reflects the rules triggered and their assigned weights. A low score leaves the email's legitimacy unverified.
+The score represents the rule weights for the observed indicators. Review individual findings regardless of the overall classification.
 
-## Test plan
+## Testing
 
-Use fictional messages and harmless sample files. Record the actual findings and scores alongside these expectations and save screenshots for the project report.
+The UI review version associated with PR #11 passed **112 automated tests**, with zero failures. The six required fictional browser scenarios and an additional combined demonstration matched their expected scores and classifications.
 
-| Sample | Expected findings | Expected score |
+| Scenario | Expected | Observed |
 | --- | --- | --- |
-| Routine university announcement | No indicators detected | 0 · Low |
-| Urgent password verification | Urgency and credential request | 35 · Medium |
-| Fictional bank impersonation with an IP-address link | Sender mismatch and suspicious URL | 35 · Medium |
-| Message with a harmless test file named `report.pdf.exe` | Potentially dangerous attachment | 15 · Low |
-| Routine message with a sample PDF | PDF signature matches and no indicators are detected | 0 · Low |
-| Urgent HTML message with different displayed and destination domains | Urgency and misleading link destination | 30 · Medium |
+| Routine university announcement | 0 · Low | 0 · Low |
+| Urgency and credential request | 35 · Medium | 35 · Medium |
+| Sender mismatch and suspicious URL | 35 · Medium | 35 · Medium |
+| Harmless double-extension file | 15 · Low | 15 · Low |
+| Routine PDF attachment | 0 · Low | 0 · Low |
+| Urgency and misleading link | 30 · Medium | 30 · Medium |
+| Combined link and attachment demo | 65 · High | 65 · High |
 
-For the demo, combine an urgent password request, an IP-address URL, and a harmless file named `report.pdf.exe`. The expected score is **65/100 (High)** if only those four categories fire.
+Run `npm test` anytime to repeat the automated suite. GitHub Actions runs the tests on pull requests, and branch protection on `main` requires a pull request and passing `test` status check.
 
-## Safety and limitations
+## Security and limitations
 
-The design keeps analysis in the browser. It inspects links as text without visiting them or following redirects, and reads attachments as bytes without executing them, enabling macros, or rendering active content. Use fictional data for testing and keep real email contents and credentials out of the repository.
+The application processes submitted text and file bytes locally. It displays links as text and does not automatically open them. Files are inspected without execution or macro activation. Use fictional messages and harmless fixtures.
 
-An ordinary deadline can trigger the urgency rule, while a carefully worded phishing email can evade it. A dangerous-looking attachment can also produce a low overall score on its own, so the individual finding should stay visible. HTTPS and matching file signatures describe properties of a URL or file. They leave its safety unverified.
+The application uses heuristic rules and does not verify SPF, DKIM, or DMARC, perform antivirus scanning, or query live reputation services. A matching file signature or HTTPS connection does not establish safety. A low score does not establish legitimacy, and the evaluation scenarios do not measure real-world detection accuracy.
