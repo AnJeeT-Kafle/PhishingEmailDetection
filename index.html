@@ -15,12 +15,16 @@
     <meta name="referrer" content="no-referrer" />
     <title>Phishing Email Detection Platform</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="style.css" />
-    <script type="module" src="app.js"></script>
+    <link rel="stylesheet" href="style.css?v=3" />
+    <script type="module" src="app.js?v=3"></script>
   </head>
   <body>
     <header class="site-header">
       <div class="container">
+        <div class="header-top">
+          <div class="brand"><span class="brand-mark" aria-hidden="true">✓</span><span>EMAIL SECURITY</span></div>
+          <span class="privacy-label"><span aria-hidden="true" class="privacy-dot"></span> Local analysis</span>
+        </div>
         <h1>Phishing Email Detection Platform</h1>
         <p class="tagline">
           Paste an email to get an explainable phishing risk score. Analysis runs entirely in your
@@ -29,9 +33,10 @@
       </div>
     </header>
 
-    <main class="container layout">
-      <section class="panel" aria-labelledby="input-heading">
+    <main id="analysis-layout" class="container layout">
+      <section id="input-panel" class="panel" aria-labelledby="input-heading">
         <h2 id="input-heading">Email to analyze</h2>
+        <p class="panel-intro">Enter a sample email to check its content, links, and attachments.</p>
 
         <!-- novalidate: the HTML5 attributes below describe the rules, but app.js
              (validateInput) is the authority and shows errors inline. -->
@@ -62,6 +67,7 @@
               type="text"
               maxlength="500"
               autocomplete="off"
+              placeholder="Enter the email subject"
               aria-describedby="subject-error"
             />
             <p id="subject-error" class="error" hidden></p>
@@ -76,6 +82,7 @@
               required
               maxlength="100000"
               spellcheck="false"
+              placeholder="Paste the message text or HTML here…"
               aria-describedby="body-hint body-error"
             ></textarea>
             <p id="body-hint" class="hint">Plain text or pasted HTML. Up to 100,000 characters.</p>
@@ -124,10 +131,26 @@
         </form>
       </section>
 
-      <section id="results" class="panel results" aria-labelledby="results-heading" aria-live="polite" hidden>
-        <h2 id="results-heading" tabindex="-1">Results</h2>
+      <section id="analyzing-panel" class="panel analyzing-panel" aria-labelledby="analyzing-heading" hidden>
+        <div class="scan-visual" aria-hidden="true">
+          <div class="scan-document">
+            <span></span><span></span><span></span><span></span>
+            <div class="scan-beam"></div>
+          </div>
+          <div class="analysis-spinner"></div>
+        </div>
+        <h2 id="analyzing-heading" tabindex="-1">Analyzing email…</h2>
+        <p role="status">Checking message content, links, and attachments.</p>
+        <button id="cancel-analysis-btn" type="button" class="btn btn-secondary">Cancel</button>
+      </section>
 
-        <div id="summary" class="summary">
+      <section id="results" class="panel results" aria-labelledby="results-heading" aria-live="polite" hidden>
+        <div class="results-top">
+          <h2 id="results-heading" tabindex="-1">Analysis results</h2>
+          <button id="another-email-btn" type="button" class="btn btn-primary">Analyze another email</button>
+        </div>
+
+        <div id="summary" class="summary result-section">
           <div id="score-badge" class="badge">
             <span id="score-value" class="badge-score"></span>
             <span id="score-class" class="badge-class"></span>
@@ -135,42 +158,67 @@
           <p id="assessment" class="assessment"></p>
         </div>
 
-        <h3>Recommendations</h3>
-        <ul id="recommendations" class="bullets"></ul>
-
-        <h3>Score breakdown</h3>
-        <div class="table-wrap">
-          <table class="breakdown">
-            <thead>
-              <tr><th scope="col">Category</th><th scope="col" class="num">Points</th></tr>
-            </thead>
-            <tbody id="breakdown-body"></tbody>
-            <tfoot>
-              <tr><th scope="row">Total</th><td id="breakdown-total" class="num"></td></tr>
-            </tfoot>
-          </table>
+        <div class="result-section">
+          <h3>Recommendations</h3>
+          <ul id="recommendations" class="bullets"></ul>
         </div>
-        <p id="cap-note" class="hint"></p>
 
-        <h3>Findings</h3>
-        <div id="findings"></div>
+        <div class="result-section">
+          <h3>Score breakdown</h3>
+          <div class="table-wrap">
+            <table class="breakdown">
+              <thead>
+                <tr><th scope="col">Category</th><th scope="col" class="num">Points</th></tr>
+              </thead>
+              <tbody id="breakdown-body"></tbody>
+              <tfoot>
+                <tr><th scope="row">Total</th><td id="breakdown-total" class="num"></td></tr>
+              </tfoot>
+            </table>
+          </div>
+          <p id="cap-note" class="hint"></p>
+        </div>
 
-        <h3>Links</h3>
-        <div id="links" class="cards"></div>
+        <div class="result-section">
+          <h3>Findings</h3>
+          <div id="findings"></div>
+        </div>
 
-        <h3>Attachments</h3>
-        <div id="attachments" class="cards"></div>
+        <div class="result-section">
+          <h3>Links</h3>
+          <div id="links" class="cards"></div>
+        </div>
 
-        <div id="warnings-block" hidden>
+        <div class="result-section">
+          <h3>Attachments</h3>
+          <div id="attachments" class="cards"></div>
+        </div>
+
+        <div id="warnings-block" class="result-section" hidden>
           <h3>Warnings</h3>
           <ul id="warnings" class="bullets warnings"></ul>
         </div>
 
-        <p class="limitations">
+        <p class="limitations result-section">
           <strong>Limitations:</strong> This tool analyzes content only. It does not verify SPF,
           DKIM, or DMARC sender authentication, and a low score does not confirm an email is
           legitimate.
         </p>
+      </section>
+
+      <section id="awaiting-panel" class="panel awaiting-results" aria-labelledby="awaiting-heading">
+        <div class="empty-visual" aria-hidden="true">
+          <span class="empty-mark">✓</span>
+        </div>
+        <h2 id="awaiting-heading">Ready to analyze</h2>
+        <p class="panel-intro">Your risk assessment, findings, and recommendations will appear here.</p>
+        <div class="risk-guide">
+          <h3>Risk score guide</h3>
+          <div class="risk-row"><span class="risk-dot risk-dot-low"></span><span>Low risk</span><span>0–29</span></div>
+          <div class="risk-row"><span class="risk-dot risk-dot-medium"></span><span>Medium risk</span><span>30–59</span></div>
+          <div class="risk-row"><span class="risk-dot risk-dot-high"></span><span>High risk</span><span>60–100</span></div>
+        </div>
+        <p class="assessment-note">A low score does not confirm an email is legitimate. Review the individual findings.</p>
       </section>
     </main>
 

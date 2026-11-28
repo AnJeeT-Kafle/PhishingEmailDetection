@@ -444,12 +444,36 @@ function renderResults(result, notes = []) {
   renderAttachments(result);
   renderWarnings(result, notes);
 
-  $("results").hidden = false;
+  showView("results");
+  revealResults();
   // Move keyboard and screen reader focus to the results (and scroll them into view).
   $("results-heading").focus();
 }
 
+// Reveal each group when it enters the viewport. Content remains readable without
+// animation, including when reduced motion is enabled or observers are unavailable.
+let revealObserver;
+
+function revealResults() {
+  revealObserver?.disconnect();
+  const sections = $("results").querySelectorAll(".result-section");
+  for (const section of sections) section.classList.remove("revealed");
+
+  if (!("IntersectionObserver" in window) ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  revealObserver = new IntersectionObserver((entries, observer) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add("revealed");
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0 });
+  for (const section of sections) revealObserver.observe(section);
+}
+
 function clearResults() {
+  revealObserver?.disconnect();
   for (const id of ["recommendations", "breakdown-body", "findings", "links", "attachments", "warnings"]) {
     $(id).replaceChildren();
   }
@@ -467,6 +491,21 @@ function clearResults() {
 // Incremented on Clear so an analysis that finishes afterwards is discarded.
 let generation = 0;
 
+function showView(view) {
+  const editing = view === "form";
+  $("input-panel").hidden = !editing;
+  $("awaiting-panel").hidden = !editing;
+  $("analyzing-panel").hidden = view !== "analyzing";
+  $("results").hidden = view !== "results";
+  $("analysis-layout").classList.toggle("single-view", !editing);
+}
+
+function resetAnalyzeButton() {
+  $("analyze-btn").disabled = false;
+  $("analyze-btn").textContent = "Analyze Email";
+  $("results").removeAttribute("aria-busy");
+}
+
 function onClear() {
   generation += 1;
   clearTimeout(detectTimer);
@@ -476,6 +515,8 @@ function onClear() {
   updateDetectedUrls();
   renderFileList();
   clearResults();
+  resetAnalyzeButton();
+  showView("form");
   $("sender").focus();
 }
 
@@ -493,10 +534,15 @@ async function onAnalyze(event) {
   button.disabled = true;
   button.textContent = "Analyzing…";
   $("results").setAttribute("aria-busy", "true");
-  setStatus("Analyzing…");
+  showView("analyzing");
+  $("analyzing-heading").focus();
+
+  // Keep the transition visible for fast analyses while file inspection runs.
+  const minimumDisplay = new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const { files, notes } = await prepareFiles(input.fileList);
+    if (run !== generation) return;
     const result = await analyzeEmailAsync({
       sender: input.sender.trim(),
       subject: input.subject,
@@ -504,18 +550,18 @@ async function onAnalyze(event) {
       url: input.url,
       files,
     });
+    await minimumDisplay;
     if (run !== generation) return; // Cleared while analyzing.
     renderResults(result, notes);
-    setStatus("Analysis complete. Results are shown below.");
   } catch {
     if (run !== generation) return;
     // Nothing about the email is logged; the user just sees a friendly message.
     clearResults();
+    showView("form");
     setStatus("Something went wrong while analyzing this email. Please check the input and try again.", true);
+    $("sender").focus();
   } finally {
-    button.disabled = false;
-    button.textContent = "Analyze Email";
-    $("results").removeAttribute("aria-busy");
+    if (run === generation) resetAnalyzeButton();
   }
 }
 
@@ -544,6 +590,8 @@ function init() {
 
   form.addEventListener("submit", onAnalyze);
   $("clear-btn").addEventListener("click", onClear);
+  $("another-email-btn").addEventListener("click", onClear);
+  $("cancel-analysis-btn").addEventListener("click", onClear);
   $("files").addEventListener("change", renderFileList);
 
   for (const id of Object.keys(TEXT_FIELDS)) {
