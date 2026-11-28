@@ -1,6 +1,9 @@
 /* Phishing Email Detection Platform: page styles.
    System fonts only (no web fonts or external requests). All styling lives here because
-   the Content Security Policy blocks inline <style> blocks and style="" attributes. */
+   the Content Security Policy blocks inline <style> blocks and style="" attributes.
+
+   Palette: one main accent (blue), one secondary (teal), plus the three risk colors.
+   Every color is a variable, defined once for light mode and again for dark mode. */
 
 :root {
   --bg: #f4f6f9;
@@ -9,17 +12,37 @@
   --muted: #5b6472;
   --border: #d5dae1;
   --accent: #1f4fbf;
+  --accent-hover: #173d96;
+  --accent-soft: #e6edfb;
   --accent-text: #ffffff;
+  --heading-accent: #1f4fbf;
+  --secondary: #0e7c86;
+  --secondary-soft: #e3f4f5;
   --focus: #1f4fbf;
   --error: #b3261e;
   --error-bg: #fdecea;
   --warn-bg: #fff4e0;
+  --warn-edge: #b26a00;
   --code-bg: #eef1f5;
 
-  /* Badge colors: white text on each has a contrast ratio above 6.5:1. */
+  /* Header band. Title and tagline colors are at least 5:1 on every gradient stop. */
+  --header-from: #17357f;
+  --header-mid: #1f4fbf;
+  --header-to: #0e6f78;
+  --header-text: #ffffff;
+  --header-muted: #dfe7fb;
+
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 14px rgba(16, 24, 40, 0.07);
+  --btn-shadow: 0 1px 2px rgba(16, 24, 40, 0.18);
+
+  /* Badge colors: white text on each has a contrast ratio above 5.5:1. */
   --low: #1e6b34;
   --medium: #8a4b00;
   --high: #b3261e;
+  --low-edge: #1e6b34;
+  --medium-edge: #8a4b00;
+  --high-edge: #b3261e;
+  --badge-neutral: #5b6472;
   --badge-text: #ffffff;
 
   --radius: 8px;
@@ -30,18 +53,39 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121418;
+    --bg: #111317;
     --surface: #1b1f24;
     --text: #e8ebef;
     --muted: #a4adbb;
     --border: #353b44;
     --accent: #6d9bff;
+    --accent-hover: #93b6ff;
+    --accent-soft: #1c2a47;
     --accent-text: #0b1220;
+    --heading-accent: #8fb3ff;
+    --secondary: #3fc1c9;
+    --secondary-soft: #15302f;
     --focus: #8fb3ff;
     --error: #ff8a80;
     --error-bg: #3a1d1b;
     --warn-bg: #3a2c14;
+    --warn-edge: #e0a33b;
     --code-bg: #262b33;
+
+    --header-from: #0d1a3a;
+    --header-mid: #163073;
+    --header-to: #0c3a40;
+    --header-text: #f2f5fa;
+    --header-muted: #c3cde0;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
+    --btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+
+    /* Same solid badges (white text), with a brighter ring so they stand out on dark panels. */
+    --low-edge: #5fd38a;
+    --medium-edge: #f0b04a;
+    --high-edge: #ff8a80;
+    --badge-neutral: #4a5260;
   }
 }
 
@@ -78,6 +122,7 @@ h3 {
 h1 {
   font-size: clamp(1.4rem, 4vw, 2rem);
   margin: 0 0 0.25rem;
+  letter-spacing: -0.01em;
 }
 
 h2 {
@@ -85,20 +130,39 @@ h2 {
   margin: 0 0 1rem;
 }
 
+/* Short accent underline under panel headings. */
+h2::after {
+  content: "";
+  display: block;
+  width: 2.75rem;
+  height: 3px;
+  margin-top: 0.4rem;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--secondary));
+}
+
 h3 {
   font-size: 1.05rem;
   margin: 1.5rem 0 0.5rem;
 }
 
-.site-header {
-  background: var(--surface);
+.results h3 {
+  color: var(--heading-accent);
+  padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--border);
-  padding: 1.25rem 0;
+}
+
+.site-header {
+  background: var(--header-mid);
+  background: linear-gradient(120deg, var(--header-from) 0%, var(--header-mid) 55%, var(--header-to) 100%);
+  color: var(--header-text);
+  border-bottom: 3px solid var(--secondary);
+  padding: 1.5rem 0;
 }
 
 .tagline {
   margin: 0;
-  color: var(--muted);
+  color: var(--header-muted);
   max-width: 70ch;
 }
 
@@ -113,12 +177,13 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gap);
-  padding-top: var(--gap);
+  padding-top: 1.25rem;
 }
 
 @media (min-width: 900px) {
   .layout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
     align-items: start;
   }
 }
@@ -126,9 +191,15 @@ h3 {
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 1.25rem;
   min-width: 0;
+}
+
+.panel.results {
+  border-top-color: var(--secondary);
 }
 
 /* Form */
@@ -161,6 +232,19 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.5rem 0.625rem;
+  transition: border-color 0.15s ease;
+}
+
+input[type="text"]:hover,
+input[type="url"]:hover,
+textarea:hover {
+  border-color: var(--muted);
+}
+
+input[type="text"]:focus,
+input[type="url"]:focus,
+textarea:focus {
+  border-color: var(--accent);
 }
 
 textarea {
@@ -173,6 +257,22 @@ textarea {
 input[type="file"] {
   max-width: 100%;
   font: inherit;
+}
+
+input[type="file"]::file-selector-button {
+  font: inherit;
+  font-weight: 600;
+  margin-right: 0.75rem;
+  padding: 0.375rem 0.875rem;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--accent-soft);
 }
 
 input[aria-invalid="true"],
@@ -215,6 +315,7 @@ textarea[aria-invalid="true"] {
 .file-list li {
   padding: 0.375rem 0.5rem;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--secondary);
   border-radius: 6px;
   margin-bottom: 0.25rem;
   background: var(--code-bg);
@@ -228,6 +329,7 @@ textarea[aria-invalid="true"] {
 
 .file-list li.not-inspected {
   background: var(--warn-bg);
+  border-left-color: var(--warn-edge);
 }
 
 /* Long URLs, hashes, and file names must wrap instead of widening the page. */
@@ -253,16 +355,33 @@ textarea[aria-invalid="true"] {
   min-height: 44px;
   cursor: pointer;
   border: 2px solid var(--accent);
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-text);
+  padding-left: 1.75rem;
+  padding-right: 1.75rem;
+  box-shadow: var(--btn-shadow);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+  box-shadow: none;
 }
 
 .btn-secondary {
   background: transparent;
   color: var(--accent);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--accent-soft);
 }
 
 .btn:disabled {
@@ -281,6 +400,9 @@ textarea[aria-invalid="true"] {
   flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--code-bg);
 }
 
 .badge {
@@ -288,33 +410,41 @@ textarea[aria-invalid="true"] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 7.5rem;
-  padding: 0.75rem 1rem;
+  min-width: 8.5rem;
+  padding: 0.875rem 1.25rem;
   border-radius: var(--radius);
+  border: 2px solid var(--badge-neutral);
   color: var(--badge-text);
-  background: var(--muted);
+  background: var(--badge-neutral);
+  box-shadow: var(--btn-shadow);
 }
 
 .badge-low {
   background: var(--low);
+  border-color: var(--low-edge);
 }
 
 .badge-medium {
   background: var(--medium);
+  border-color: var(--medium-edge);
 }
 
 .badge-high {
   background: var(--high);
+  border-color: var(--high-edge);
 }
 
 .badge-score {
-  font-size: 1.75rem;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
 }
 
 .badge-class {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
 }
 
 .assessment {
@@ -331,10 +461,20 @@ textarea[aria-invalid="true"] {
   margin-bottom: 0.25rem;
 }
 
+.bullets li::marker {
+  color: var(--secondary);
+}
+
+.warnings {
+  padding-left: 0;
+  list-style: none;
+}
+
 .warnings li {
   background: var(--warn-bg);
+  border-left: 4px solid var(--warn-edge);
   border-radius: 4px;
-  padding: 0.125rem 0.375rem;
+  padding: 0.375rem 0.625rem;
 }
 
 .table-wrap {
@@ -353,10 +493,16 @@ textarea[aria-invalid="true"] {
   border-bottom: 1px solid var(--border);
 }
 
+.breakdown thead th {
+  background: var(--accent-soft);
+  font-size: 0.9rem;
+}
+
 .breakdown tfoot th,
 .breakdown tfoot td {
   font-weight: 700;
   border-bottom: none;
+  border-top: 2px solid var(--accent);
 }
 
 .breakdown .num {
@@ -384,13 +530,15 @@ textarea[aria-invalid="true"] {
 
 .card {
   border: 1px solid var(--border);
+  border-left: 4px solid var(--secondary);
   border-radius: var(--radius);
   padding: 0.75rem;
   min-width: 0;
+  background: var(--surface);
 }
 
 .card.flagged {
-  border-left: 4px solid var(--high);
+  border-left: 4px solid var(--high-edge);
 }
 
 .card-title {
@@ -425,6 +573,7 @@ textarea[aria-invalid="true"] {
   margin-top: 1.5rem;
   padding: 0.75rem;
   border-radius: 6px;
+  border-left: 4px solid var(--accent);
   background: var(--code-bg);
   font-size: 0.875rem;
 }
@@ -444,5 +593,14 @@ textarea[aria-invalid="true"] {
 
   .facts dd {
     margin-bottom: 0.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  input[type="text"],
+  input[type="url"],
+  textarea {
+    transition: none;
   }
 }
