@@ -182,9 +182,16 @@ h3 {
 
 @media (min-width: 900px) {
   .layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
     gap: 1.25rem;
     align-items: start;
+  }
+
+  /* Before results exist, center the form instead of leaving an empty right column.
+     Browsers without :has() skip this rule and keep the two-column layout above. */
+  .layout:has(#results[hidden]) {
+    grid-template-columns: minmax(0, 760px);
+    justify-content: center;
   }
 }
 
